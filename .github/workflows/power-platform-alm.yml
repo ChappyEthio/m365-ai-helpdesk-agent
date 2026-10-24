@@ -23,7 +23,7 @@ on:
         options: [export-from-dev, build-and-deploy]
   push:
     branches: [main]
-    paths: ["solutions/HelpdeskAgent/**", "deployment-settings/**"]
+    paths: ["solutions/HelpdeskAgent/**"]
 
 env:
   SOLUTION_NAME: HelpdeskAgent
