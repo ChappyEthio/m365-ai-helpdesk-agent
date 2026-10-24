@@ -1,0 +1,6 @@
+target-version = "py312"
+line-length = 120
+
+[lint]
+# Pyflakes + core pycodestyle errors + pyupgrade. Explicit so CI results don't change when ruff's defaults do.
+select = ["E4", "E7", "E9", "F", "UP"]

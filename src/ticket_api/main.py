@@ -17,8 +17,8 @@ from __future__ import annotations
 import os
 import threading
 import uuid
-from datetime import datetime, timezone
-from enum import Enum
+from datetime import UTC, datetime
+from enum import StrEnum
 
 from fastapi import Depends, FastAPI, Header, HTTPException, status
 from pydantic import BaseModel, Field, field_validator
@@ -32,7 +32,7 @@ app = FastAPI(
 )
 
 
-class Category(str, Enum):
+class Category(StrEnum):
     account = "Account"
     email = "Email"
     device = "Device"
@@ -42,14 +42,14 @@ class Category(str, Enum):
     other = "Other"
 
 
-class Priority(str, Enum):
+class Priority(StrEnum):
     low = "Low"
     normal = "Normal"
     high = "High"
     urgent = "Urgent"
 
 
-class TicketStatus(str, Enum):
+class TicketStatus(StrEnum):
     pending_approval = "PendingApproval"
     open = "Open"
     in_progress = "InProgress"
@@ -136,7 +136,7 @@ def create_ticket(payload: TicketCreate, idempotency_key: str | None = Header(No
         if idempotency_key and idempotency_key in store.idempotency:
             return store.tickets[store.idempotency[idempotency_key]]
         risky = is_high_risk(payload)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         ticket = Ticket(
             **payload.model_dump(),
             id=f"HD-{uuid.uuid4().hex[:8].upper()}",
@@ -177,8 +177,8 @@ def update_ticket(ticket_id: str, update: TicketUpdate) -> Ticket:
             if value is not None:
                 data[field] = value
         if update.note:
-            data["description"] = f"{ticket.description}\n\n[{datetime.now(timezone.utc):%Y-%m-%d %H:%M} UTC] {update.note}"
-        data["updated_utc"] = datetime.now(timezone.utc)
+            data["description"] = f"{ticket.description}\n\n[{datetime.now(UTC):%Y-%m-%d %H:%M} UTC] {update.note}"
+        data["updated_utc"] = datetime.now(UTC)
         updated = Ticket(**data)
         store.tickets[ticket_id] = updated
         return updated

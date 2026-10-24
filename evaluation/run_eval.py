@@ -16,7 +16,7 @@ import json
 import re
 import statistics
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from .generators import REFUSAL, AzureOpenAIGenerator, StubGenerator
@@ -102,7 +102,7 @@ def evaluate(generator, dataset_path: Path, kb_path: Path, config: dict) -> dict
 def to_markdown(result: dict) -> str:
     s = result["summary"]
     out = [f"# Evaluation report ({s['generator']})", "",
-           f"Run: {datetime.now(timezone.utc):%Y-%m-%d %H:%M} UTC  ·  Cases: {s['cases']}  ·  **{'PASSED' if s['passed'] else 'FAILED'}**", "",
+           f"Run: {datetime.now(UTC):%Y-%m-%d %H:%M} UTC  ·  Cases: {s['cases']}  ·  **{'PASSED' if s['passed'] else 'FAILED'}**", "",
            "| Metric | Value | Gate |", "|---|---|---|"]
     gate_of = {"citation_accuracy": "citation_accuracy", "refusal_accuracy": "refusal_accuracy",
                "permission_leaks": "permission_leaks", "keyword_coverage": "keyword_coverage", "latency_p95_ms": "latency_p95"}
