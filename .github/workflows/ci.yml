@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test-and-evaluate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements-dev.txt
+      - name: Lint
+        run: ruff check .
+      - name: Unit tests (ticket API, retrieval, evaluation)
+        run: pytest -q
+      - name: Agent evaluation gate (offline baseline)
+        run: python -m evaluation.run_eval
+      - name: Validate flow, connector and deployment settings JSON
+        run: |
+          for f in power-automate/*.json connectors/helpdesk-ticketing/*.json deployment-settings/*.json; do
+            python -m json.tool "$f" > /dev/null && echo "valid: $f"
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: evaluation-report
+          path: evaluation/reports/

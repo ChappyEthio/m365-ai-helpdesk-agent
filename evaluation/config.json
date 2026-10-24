@@ -1,0 +1,11 @@
+{
+  "pricing_usd_per_1k_tokens": {"prompt": 0.00015, "completion": 0.0006},
+  "pricing_note": "Example rates for a small GPT-4o-mini class deployment. Replace with the rates of your own Foundry deployment.",
+  "gates": {
+    "min_citation_accuracy": 0.8,
+    "min_refusal_accuracy": 1.0,
+    "max_permission_leaks": 0,
+    "min_keyword_coverage": 0.6,
+    "max_p95_latency_ms": 4000
+  }
+}

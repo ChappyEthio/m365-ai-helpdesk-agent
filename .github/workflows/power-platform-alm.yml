@@ -1,0 +1,140 @@
+# Power Platform ALM: dev -> source control -> test -> prod
+#
+# 1. export-from-dev (manual): exports the HelpdeskAgent solution from DEV,
+#    unpacks it into /solutions and opens a pull request for review.
+# 2. build-and-deploy (on merge to main): packs a MANAGED solution from source,
+#    runs the solution checker, deploys to TEST, then to PROD after approval.
+#
+# Secrets (repository or environment level): PP_APP_ID, PP_CLIENT_SECRET, PP_TENANT_ID
+# Variables: DEV_URL, TEST_URL, PROD_URL
+# The service principal is created by admin/New-HelpdeskAgentAppRegistration.ps1 and
+# added as an application user in each environment with a least-privilege security role.
+
+name: Power Platform ALM
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "export-from-dev or build-and-deploy"
+        required: true
+        default: export-from-dev
+        type: choice
+        options: [export-from-dev, build-and-deploy]
+  push:
+    branches: [main]
+    paths: ["solutions/HelpdeskAgent/**", "deployment-settings/**"]
+
+env:
+  SOLUTION_NAME: HelpdeskAgent
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  export-from-dev:
+    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'export-from-dev'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: microsoft/powerplatform-actions/actions-install@v1
+
+      - name: Export unmanaged solution from DEV
+        uses: microsoft/powerplatform-actions/export-solution@v1
+        with:
+          environment-url: ${{ vars.DEV_URL }}
+          app-id: ${{ secrets.PP_APP_ID }}
+          client-secret: ${{ secrets.PP_CLIENT_SECRET }}
+          tenant-id: ${{ secrets.PP_TENANT_ID }}
+          solution-name: ${{ env.SOLUTION_NAME }}
+          solution-output-file: out/${{ env.SOLUTION_NAME }}.zip
+          managed: false
+
+      - name: Unpack into source control
+        uses: microsoft/powerplatform-actions/unpack-solution@v1
+        with:
+          solution-file: out/${{ env.SOLUTION_NAME }}.zip
+          solution-folder: solutions/${{ env.SOLUTION_NAME }}
+          solution-type: Unmanaged
+          overwrite-files: true
+
+      - name: Open pull request for review
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: export/${{ github.run_id }}
+          title: "Solution export from DEV (${{ github.run_id }})"
+          body: "Automated export of ${{ env.SOLUTION_NAME }}. Review the diff of flows, topics and connection references before merging."
+          commit-message: "Export ${{ env.SOLUTION_NAME }} from DEV"
+
+  build:
+    if: github.event_name == 'push' || inputs.mode == 'build-and-deploy'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: microsoft/powerplatform-actions/actions-install@v1
+
+      - name: Pack managed solution from source
+        uses: microsoft/powerplatform-actions/pack-solution@v1
+        with:
+          solution-folder: solutions/${{ env.SOLUTION_NAME }}
+          solution-file: out/${{ env.SOLUTION_NAME }}_managed.zip
+          solution-type: Managed
+
+      - name: Solution checker
+        uses: microsoft/powerplatform-actions/check-solution@v1
+        with:
+          environment-url: ${{ vars.DEV_URL }}
+          app-id: ${{ secrets.PP_APP_ID }}
+          client-secret: ${{ secrets.PP_CLIENT_SECRET }}
+          tenant-id: ${{ secrets.PP_TENANT_ID }}
+          path: out/${{ env.SOLUTION_NAME }}_managed.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: managed-solution
+          path: out/${{ env.SOLUTION_NAME }}_managed.zip
+
+  deploy-test:
+    needs: build
+    runs-on: windows-latest
+    environment: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: managed-solution, path: out }
+      - uses: microsoft/powerplatform-actions/actions-install@v1
+      - name: Import managed solution to TEST
+        uses: microsoft/powerplatform-actions/import-solution@v1
+        with:
+          environment-url: ${{ vars.TEST_URL }}
+          app-id: ${{ secrets.PP_APP_ID }}
+          client-secret: ${{ secrets.PP_CLIENT_SECRET }}
+          tenant-id: ${{ secrets.PP_TENANT_ID }}
+          solution-file: out/${{ env.SOLUTION_NAME }}_managed.zip
+          use-deployment-settings-file: true
+          deployment-settings-file: deployment-settings/test.json
+          force-overwrite: true
+          publish-changes: true
+
+  deploy-prod:
+    needs: deploy-test
+    runs-on: windows-latest
+    environment: production   # protected environment: requires a reviewer to approve
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: managed-solution, path: out }
+      - uses: microsoft/powerplatform-actions/actions-install@v1
+      - name: Import managed solution to PROD
+        uses: microsoft/powerplatform-actions/import-solution@v1
+        with:
+          environment-url: ${{ vars.PROD_URL }}
+          app-id: ${{ secrets.PP_APP_ID }}
+          client-secret: ${{ secrets.PP_CLIENT_SECRET }}
+          tenant-id: ${{ secrets.PP_TENANT_ID }}
+          solution-file: out/${{ env.SOLUTION_NAME }}_managed.zip
+          use-deployment-settings-file: true
+          deployment-settings-file: deployment-settings/prod.json
+          force-overwrite: true
+          publish-changes: true

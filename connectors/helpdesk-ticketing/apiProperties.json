@@ -1,0 +1,19 @@
+{
+  "properties": {
+    "connectionParameters": {
+      "api_key": {
+        "type": "securestring",
+        "uiDefinition": {
+          "displayName": "API key",
+          "description": "Helpdesk API key (issued from Azure Key Vault by the platform admin)",
+          "tooltip": "Ask the platform admin for the key for this environment",
+          "constraints": { "tabIndex": 2, "clearText": false, "required": "true" }
+        }
+      }
+    },
+    "iconBrandColor": "#1F4E79",
+    "capabilities": [],
+    "publisher": "Tesfaye Eyasu",
+    "stackOwner": "Tesfaye Eyasu"
+  }
+}

@@ -1,0 +1,258 @@
+{
+  "properties": {
+    "connectionReferences": {
+      "shared_helpdeskticketing": {
+        "runtimeSource": "embedded",
+        "connection": { "connectionReferenceLogicalName": "cr_HelpdeskTicketing" },
+        "api": { "name": "shared_cr-5fhelpdesk-20ticketing" }
+      },
+      "shared_approvals": {
+        "runtimeSource": "embedded",
+        "connection": { "connectionReferenceLogicalName": "cr_Approvals" },
+        "api": { "name": "shared_approvals" }
+      },
+      "shared_office365users": {
+        "runtimeSource": "embedded",
+        "connection": { "connectionReferenceLogicalName": "cr_Office365Users" },
+        "api": { "name": "shared_office365users" }
+      },
+      "shared_teams": {
+        "runtimeSource": "embedded",
+        "connection": { "connectionReferenceLogicalName": "cr_Teams" },
+        "api": { "name": "shared_teams" }
+      }
+    },
+    "definition": {
+      "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+      "contentVersion": "1.0.0.0",
+      "parameters": {
+        "$connections": { "defaultValue": {}, "type": "Object" },
+        "$authentication": { "defaultValue": {}, "type": "SecureObject" },
+        "IT Alerts Team ID (cr_ITAlertsTeamId)": { "defaultValue": "", "type": "String" },
+        "IT Alerts Channel ID (cr_ITAlertsChannelId)": { "defaultValue": "", "type": "String" }
+      },
+      "triggers": {
+        "Run_from_Copilot": {
+          "type": "Request",
+          "kind": "Skills",
+          "inputs": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "requesterUpn": { "type": "string", "title": "Requester UPN" },
+                "title": { "type": "string", "title": "Title" },
+                "description": { "type": "string", "title": "Description" },
+                "category": { "type": "string", "title": "Category" },
+                "priority": { "type": "string", "title": "Priority" }
+              },
+              "required": ["requesterUpn", "title", "description", "category"]
+            }
+          }
+        }
+      },
+      "actions": {
+        "Init_Result": {
+          "type": "InitializeVariable",
+          "runAfter": {},
+          "inputs": { "variables": [ { "name": "Result", "type": "string", "value": "" } ] }
+        },
+        "Init_TicketId": {
+          "type": "InitializeVariable",
+          "runAfter": { "Init_Result": ["Succeeded"] },
+          "inputs": { "variables": [ { "name": "TicketId", "type": "string", "value": "" } ] }
+        },
+        "Try": {
+          "type": "Scope",
+          "runAfter": { "Init_TicketId": ["Succeeded"] },
+          "actions": {
+            "Check_input_is_valid": {
+              "type": "If",
+              "runAfter": {},
+              "expression": {
+                "and": [
+                  { "greaterOrEquals": [ "@length(trim(coalesce(triggerBody()?['title'], '')))", 5 ] },
+                  { "greaterOrEquals": [ "@length(trim(coalesce(triggerBody()?['description'], '')))", 10 ] },
+                  { "contains": [ "@coalesce(triggerBody()?['requesterUpn'], '')", "@" ] }
+                ]
+              },
+              "actions": {
+                "Create_ticket": {
+                  "type": "OpenApiConnection",
+                  "runAfter": {},
+                  "inputs": {
+                    "host": {
+                      "connectionName": "shared_helpdeskticketing",
+                      "operationId": "CreateTicket",
+                      "apiId": "/providers/Microsoft.PowerApps/apis/shared_cr-5fhelpdesk-20ticketing"
+                    },
+                    "parameters": {
+                      "Idempotency-Key": "@workflow()?['run']?['name']",
+                      "body/requester_upn": "@triggerBody()?['requesterUpn']",
+                      "body/title": "@triggerBody()?['title']",
+                      "body/description": "@triggerBody()?['description']",
+                      "body/category": "@triggerBody()?['category']",
+                      "body/priority": "@coalesce(triggerBody()?['priority'], 'Normal')",
+                      "body/source": "CopilotAgent"
+                    },
+                    "authentication": "@parameters('$authentication')",
+                    "retryPolicy": { "type": "exponential", "count": 4, "interval": "PT10S", "minimumInterval": "PT5S", "maximumInterval": "PT2M" }
+                  }
+                },
+                "Set_TicketId": {
+                  "type": "SetVariable",
+                  "runAfter": { "Create_ticket": ["Succeeded"] },
+                  "inputs": { "name": "TicketId", "value": "@outputs('Create_ticket')?['body/id']" }
+                },
+                "Needs_human_approval": {
+                  "type": "If",
+                  "runAfter": { "Set_TicketId": ["Succeeded"] },
+                  "expression": { "equals": [ "@outputs('Create_ticket')?['body/requires_approval']", true ] },
+                  "actions": {
+                    "Get_requester_manager": {
+                      "type": "OpenApiConnection",
+                      "runAfter": {},
+                      "inputs": {
+                        "host": { "connectionName": "shared_office365users", "operationId": "Manager_V2", "apiId": "/providers/Microsoft.PowerApps/apis/shared_office365users" },
+                        "parameters": { "id": "@triggerBody()?['requesterUpn']" },
+                        "authentication": "@parameters('$authentication')"
+                      }
+                    },
+                    "Manager_approval": {
+                      "type": "OpenApiConnectionWebhook",
+                      "runAfter": { "Get_requester_manager": ["Succeeded"] },
+                      "limit": { "timeout": "P2D" },
+                      "inputs": {
+                        "host": { "connectionName": "shared_approvals", "operationId": "StartAndWaitForAnApproval", "apiId": "/providers/Microsoft.PowerApps/apis/shared_approvals" },
+                        "parameters": {
+                          "approvalType": "Basic",
+                          "WebhookApprovalCreationInput/title": "@concat('Approve IT request ', variables('TicketId'), ': ', triggerBody()?['title'])",
+                          "WebhookApprovalCreationInput/assignedTo": "@outputs('Get_requester_manager')?['body/mail']",
+                          "WebhookApprovalCreationInput/details": "@concat('Requested by ', triggerBody()?['requesterUpn'], '\n\n', triggerBody()?['description'], '\n\nThis request changes access or security settings, so it needs your approval before IT acts.')",
+                          "WebhookApprovalCreationInput/enableNotifications": true,
+                          "WebhookApprovalCreationInput/enableReassignment": false
+                        },
+                        "authentication": "@parameters('$authentication')"
+                      }
+                    },
+                    "Was_approved": {
+                      "type": "If",
+                      "runAfter": { "Manager_approval": ["Succeeded"] },
+                      "expression": { "equals": [ "@outputs('Manager_approval')?['body/outcome']", "Approve" ] },
+                      "actions": {
+                        "Open_ticket": {
+                          "type": "OpenApiConnection",
+                          "runAfter": {},
+                          "inputs": {
+                            "host": { "connectionName": "shared_helpdeskticketing", "operationId": "UpdateTicket", "apiId": "/providers/Microsoft.PowerApps/apis/shared_cr-5fhelpdesk-20ticketing" },
+                            "parameters": {
+                              "ticket_id": "@variables('TicketId')",
+                              "body/status": "Open",
+                              "body/approval_id": "@outputs('Manager_approval')?['body/name']",
+                              "body/note": "@concat('Approved by ', outputs('Get_requester_manager')?['body/displayName'])"
+                            },
+                            "authentication": "@parameters('$authentication')",
+                            "retryPolicy": { "type": "exponential", "count": 4, "interval": "PT10S" }
+                          }
+                        },
+                        "Result_approved": {
+                          "type": "SetVariable",
+                          "runAfter": { "Open_ticket": ["Succeeded"] },
+                          "inputs": { "name": "Result", "value": "@concat('Your manager approved the request. Ticket ', variables('TicketId'), ' is now open with IT.')" }
+                        }
+                      },
+                      "else": {
+                        "actions": {
+                          "Reject_ticket": {
+                            "type": "OpenApiConnection",
+                            "runAfter": {},
+                            "inputs": {
+                              "host": { "connectionName": "shared_helpdeskticketing", "operationId": "UpdateTicket", "apiId": "/providers/Microsoft.PowerApps/apis/shared_cr-5fhelpdesk-20ticketing" },
+                              "parameters": { "ticket_id": "@variables('TicketId')", "body/status": "Rejected", "body/note": "Rejected by line manager" },
+                              "authentication": "@parameters('$authentication')"
+                            }
+                          },
+                          "Result_rejected": {
+                            "type": "SetVariable",
+                            "runAfter": { "Reject_ticket": ["Succeeded"] },
+                            "inputs": { "name": "Result", "value": "@concat('Your manager did not approve request ', variables('TicketId'), '. Please talk to them if you still need it.')" }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "else": {
+                    "actions": {
+                      "Result_created": {
+                        "type": "SetVariable",
+                        "runAfter": {},
+                        "inputs": { "name": "Result", "value": "@concat('Ticket ', variables('TicketId'), ' is open. IT will contact you.')" }
+                      }
+                    }
+                  }
+                }
+              },
+              "else": {
+                "actions": {
+                  "Result_invalid": {
+                    "type": "SetVariable",
+                    "runAfter": {},
+                    "inputs": { "name": "Result", "value": "I need a short title (5+ characters) and a description (10+ characters) to create the ticket." }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "Catch": {
+          "type": "Scope",
+          "runAfter": { "Try": ["Failed", "TimedOut"] },
+          "actions": {
+            "Run_link": {
+              "type": "Compose",
+              "runAfter": {},
+              "inputs": "@concat('https://make.powerautomate.com/environments/', workflow()?['tags']?['environmentName'], '/flows/', workflow()?['name'], '/runs/', workflow()?['run']?['name'])"
+            },
+            "Alert_IT_channel": {
+              "type": "OpenApiConnection",
+              "runAfter": { "Run_link": ["Succeeded"] },
+              "inputs": {
+                "host": { "connectionName": "shared_teams", "operationId": "PostMessageToConversation", "apiId": "/providers/Microsoft.PowerApps/apis/shared_teams" },
+                "parameters": {
+                  "poster": "Flow bot",
+                  "location": "Channel",
+                  "body/recipient/groupId": "@parameters('IT Alerts Team ID (cr_ITAlertsTeamId)')",
+                  "body/recipient/channelId": "@parameters('IT Alerts Channel ID (cr_ITAlertsChannelId)')",
+                  "body/messageBody": "@concat('<p><b>Helpdesk agent flow failed</b></p><p>Requester: ', triggerBody()?['requesterUpn'], '<br>Ticket: ', if(empty(variables('TicketId')), 'not created', variables('TicketId')), '<br>Error: ', string(first(filter(result('Try'), item()?['status'] == 'Failed'))?['error']?['message']), '</p><p><a href=\"', outputs('Run_link'), '\">Open run and resubmit</a></p>')"
+                },
+                "authentication": "@parameters('$authentication')"
+              }
+            },
+            "Result_failed": {
+              "type": "SetVariable",
+              "runAfter": { "Alert_IT_channel": ["Succeeded", "Failed"] },
+              "inputs": { "name": "Result", "value": "@concat('Sorry, I could not finish your request. IT has been alerted. Reference: ', workflow()?['run']?['name'])" }
+            }
+          }
+        },
+        "Respond_to_Copilot": {
+          "type": "Response",
+          "kind": "Skills",
+          "runAfter": { "Catch": ["Succeeded", "Skipped", "Failed"] },
+          "inputs": {
+            "statusCode": 200,
+            "body": { "message": "@variables('Result')", "ticketId": "@variables('TicketId')" },
+            "schema": {
+              "type": "object",
+              "properties": {
+                "message": { "type": "string", "title": "message" },
+                "ticketId": { "type": "string", "title": "ticketId" }
+              }
+            }
+          }
+        }
+      },
+      "outputs": {}
+    }
+  },
+  "schemaVersion": "1.0.0.0"
+}

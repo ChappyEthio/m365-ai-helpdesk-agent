@@ -1,0 +1,108 @@
+# Copilot Studio topic (code view). Collects the details, confirms with the user,
+# then calls the CreateTicketWithApproval flow. Replace flowId after importing the solution.
+kind: AdaptiveDialog
+beginDialog:
+  kind: OnRecognizedIntent
+  id: main
+  intent:
+    displayName: Create IT ticket
+    triggerQueries:
+      - I need help from IT
+      - Open a ticket
+      - My laptop is broken
+      - I need access to a shared mailbox
+      - I lost my phone and can't sign in
+      - Report a problem
+
+  actions:
+    - kind: Question
+      id: askCategory
+      variable: init:Topic.Category
+      prompt: What kind of problem is it?
+      entity:
+        kind: EmbeddedEntity
+        definition:
+          kind: ClosedListEntity
+          items:
+            - id: Account
+              displayName: Account, password or MFA
+            - id: Email
+              displayName: Email or shared mailbox
+            - id: Device
+              displayName: Laptop, phone or printer
+            - id: Network
+              displayName: Internet, Wi-Fi or VPN
+            - id: Software
+              displayName: An app or software
+            - id: Security
+              displayName: Suspicious email or security
+            - id: Other
+              displayName: Something else
+
+    - kind: Question
+      id: askTitle
+      variable: init:Topic.Title
+      prompt: In one short line, what is the problem?
+      entity: StringPrebuiltEntity
+
+    - kind: Question
+      id: askDescription
+      variable: init:Topic.Description
+      prompt: Please describe what happened, what you tried, and since when.
+      entity: StringPrebuiltEntity
+
+    - kind: SetVariable
+      id: defaultPriority
+      variable: init:Topic.Priority
+      value: Normal
+
+    - kind: ConditionGroup
+      id: securityUrgency
+      conditions:
+        - id: isSecurity
+          condition: =Topic.Category = "Security"
+          actions:
+            - kind: SetVariable
+              id: setUrgent
+              variable: Topic.Priority
+              value: Urgent
+            - kind: SendActivity
+              id: securityTip
+              activity: If you typed your password on a suspicious page, change it now at https://aka.ms/sspr. I am marking this ticket as urgent.
+
+    - kind: Question
+      id: confirm
+      variable: init:Topic.Confirmed
+      prompt: "I will create a {Topic.Category} ticket: \"{Topic.Title}\". Shall I go ahead?"
+      entity: BooleanPrebuiltEntity
+
+    - kind: ConditionGroup
+      id: checkConfirmed
+      conditions:
+        - id: notConfirmed
+          condition: =Topic.Confirmed = false
+          actions:
+            - kind: SendActivity
+              id: cancelled
+              activity: OK, I have not created a ticket. Ask me again any time.
+            - kind: EndDialog
+              id: endCancelled
+
+    - kind: InvokeFlowAction
+      id: callFlow
+      input:
+        binding:
+          requesterUpn: =System.User.PrincipalName
+          title: =Topic.Title
+          description: =Topic.Description
+          category: =Topic.Category
+          priority: =Topic.Priority
+      output:
+        binding:
+          message: Topic.FlowMessage
+          ticketId: Topic.TicketId
+      flowId: 00000000-0000-0000-0000-000000000000
+
+    - kind: SendActivity
+      id: result
+      activity: "{Topic.FlowMessage}"

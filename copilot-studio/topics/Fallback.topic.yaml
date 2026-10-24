@@ -1,0 +1,27 @@
+# Fallback when generative answers find nothing approved in the knowledge sources.
+# Never guess: offer a ticket instead. This matches the refusal behaviour the
+# evaluation harness tests (evaluation/run_eval.py).
+kind: AdaptiveDialog
+beginDialog:
+  kind: OnUnknownIntent
+  id: main
+  actions:
+    - kind: SendActivity
+      id: noAnswer
+      activity: I don't have approved guidance on that. I can raise a ticket so the IT helpdesk can help you.
+
+    - kind: Question
+      id: offerTicket
+      variable: init:Topic.WantsTicket
+      prompt: Would you like me to create a ticket?
+      entity: BooleanPrebuiltEntity
+
+    - kind: ConditionGroup
+      id: route
+      conditions:
+        - id: yes
+          condition: =Topic.WantsTicket = true
+          actions:
+            - kind: BeginDialog
+              id: goCreateTicket
+              dialog: cr_helpdeskAgent.topic.CreateTicket

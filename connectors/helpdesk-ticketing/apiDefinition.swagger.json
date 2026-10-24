@@ -1,0 +1,111 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "Helpdesk Ticketing",
+    "description": "Create, read and update IT helpdesk tickets. Used by the AI IT Helpdesk Agent flows.",
+    "version": "1.0.0",
+    "contact": { "name": "Tesfaye Eyasu" }
+  },
+  "host": "helpdesk-api-dev.azurewebsites.net",
+  "basePath": "/",
+  "schemes": ["https"],
+  "consumes": ["application/json"],
+  "produces": ["application/json"],
+  "securityDefinitions": {
+    "api_key": { "type": "apiKey", "in": "header", "name": "x-api-key" }
+  },
+  "security": [{ "api_key": [] }],
+  "paths": {
+    "/tickets": {
+      "post": {
+        "operationId": "CreateTicket",
+        "summary": "Create ticket",
+        "description": "Creates a helpdesk ticket. High-risk requests are created as PendingApproval.",
+        "x-ms-visibility": "important",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "type": "string",
+            "required": false,
+            "x-ms-summary": "Idempotency key",
+            "description": "Pass the flow run ID so retries never create duplicate tickets."
+          },
+          { "name": "body", "in": "body", "required": true, "schema": { "$ref": "#/definitions/TicketCreate" } }
+        ],
+        "responses": {
+          "201": { "description": "Created", "schema": { "$ref": "#/definitions/Ticket" } },
+          "401": { "description": "Invalid API key" },
+          "422": { "description": "Validation error" }
+        }
+      }
+    },
+    "/tickets/{ticket_id}": {
+      "get": {
+        "operationId": "GetTicket",
+        "summary": "Get ticket",
+        "description": "Returns one ticket by ID.",
+        "parameters": [
+          { "name": "ticket_id", "in": "path", "required": true, "type": "string", "x-ms-summary": "Ticket ID" }
+        ],
+        "responses": {
+          "200": { "description": "OK", "schema": { "$ref": "#/definitions/Ticket" } },
+          "404": { "description": "Not found" }
+        }
+      },
+      "patch": {
+        "operationId": "UpdateTicket",
+        "summary": "Update ticket",
+        "description": "Changes status, records an approval reference or adds a note.",
+        "parameters": [
+          { "name": "ticket_id", "in": "path", "required": true, "type": "string", "x-ms-summary": "Ticket ID" },
+          { "name": "body", "in": "body", "required": true, "schema": { "$ref": "#/definitions/TicketUpdate" } }
+        ],
+        "responses": {
+          "200": { "description": "OK", "schema": { "$ref": "#/definitions/Ticket" } },
+          "409": { "description": "High-risk ticket needs approval before opening" }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "TicketCreate": {
+      "type": "object",
+      "required": ["requester_upn", "title", "description", "category"],
+      "properties": {
+        "requester_upn": { "type": "string", "x-ms-summary": "Requester UPN" },
+        "title": { "type": "string", "x-ms-summary": "Title" },
+        "description": { "type": "string", "x-ms-summary": "Description" },
+        "category": {
+          "type": "string",
+          "x-ms-summary": "Category",
+          "enum": ["Account", "Email", "Device", "Network", "Software", "Security", "Other"]
+        },
+        "priority": { "type": "string", "x-ms-summary": "Priority", "enum": ["Low", "Normal", "High", "Urgent"], "default": "Normal" },
+        "source": { "type": "string", "x-ms-summary": "Source", "default": "CopilotAgent" },
+        "approval_id": { "type": "string", "x-ms-summary": "Approval ID" }
+      }
+    },
+    "TicketUpdate": {
+      "type": "object",
+      "properties": {
+        "status": { "type": "string", "x-ms-summary": "Status", "enum": ["PendingApproval", "Open", "InProgress", "Resolved", "Rejected"] },
+        "approval_id": { "type": "string", "x-ms-summary": "Approval ID" },
+        "note": { "type": "string", "x-ms-summary": "Note" }
+      }
+    },
+    "Ticket": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "x-ms-summary": "Ticket ID" },
+        "status": { "type": "string", "x-ms-summary": "Status" },
+        "requires_approval": { "type": "boolean", "x-ms-summary": "Requires approval" },
+        "requester_upn": { "type": "string", "x-ms-summary": "Requester UPN" },
+        "title": { "type": "string", "x-ms-summary": "Title" },
+        "category": { "type": "string", "x-ms-summary": "Category" },
+        "priority": { "type": "string", "x-ms-summary": "Priority" },
+        "created_utc": { "type": "string", "format": "date-time", "x-ms-summary": "Created (UTC)" }
+      }
+    }
+  }
+}

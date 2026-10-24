@@ -1,0 +1,13 @@
+{
+  "EnvironmentVariables": [
+    { "SchemaName": "cr_ITAlertsTeamId", "Value": "<TEST_TEAM_ID>" },
+    { "SchemaName": "cr_ITAlertsChannelId", "Value": "<TEST_CHANNEL_ID>" },
+    { "SchemaName": "cr_HelpdeskApiBaseUrl", "Value": "https://helpdesk-api-test.azurewebsites.net" }
+  ],
+  "ConnectionReferences": [
+    { "LogicalName": "cr_HelpdeskTicketing", "ConnectionId": "<TEST_CONNECTION_ID>", "ConnectorId": "/providers/Microsoft.PowerApps/apis/shared_cr-5fhelpdesk-20ticketing" },
+    { "LogicalName": "cr_Approvals", "ConnectionId": "<TEST_CONNECTION_ID>", "ConnectorId": "/providers/Microsoft.PowerApps/apis/shared_approvals" },
+    { "LogicalName": "cr_Office365Users", "ConnectionId": "<TEST_CONNECTION_ID>", "ConnectorId": "/providers/Microsoft.PowerApps/apis/shared_office365users" },
+    { "LogicalName": "cr_Teams", "ConnectionId": "<TEST_CONNECTION_ID>", "ConnectorId": "/providers/Microsoft.PowerApps/apis/shared_teams" }
+  ]
+}
